@@ -1,9 +1,11 @@
 import subprocess
 import time
 import signal
+import os
 from datetime import datetime, timezone, timedelta
 
 from app.repository.job_repository import claim_job, update_job_state
+from app.workers.pid import write_pid, delete_pid
 
 BACKOFF_BASE = 2
 
@@ -20,21 +22,28 @@ class Worker:
         """Called when SIGINT or SIGTERM is received."""
         print("\nShutdown signal received. Finishing current job...")
         self.running = False
+        # Force cleanup on Windows
+        delete_pid()
+        print("Worker stopped gracefully.")
 
     def start(self):
         """Start the worker loop."""
-        print("Worker started. Waiting for jobs...")
+        write_pid()
+        print(f"Worker started (PID: {os.getpid()}). Waiting for jobs...")
 
-        while self.running:
-            job = claim_job(worker_id="worker-1")
+        try:
+            while self.running:
+                job = claim_job(worker_id="worker-1")
 
-            if not job:
-                time.sleep(2)
-                continue
+                if not job:
+                    time.sleep(2)
+                    continue
 
-            self._execute(job)
-
-        print("Worker stopped gracefully.")
+                self._execute(job)
+        finally:
+            delete_pid()
+            if self.running:  # agar signal nahi aaya tha
+                print("Worker stopped gracefully.")
 
     def _execute(self, job: dict):
         """Execute a single job."""

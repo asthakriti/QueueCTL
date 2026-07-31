@@ -1,6 +1,9 @@
 import typer
 import json
+import os
+import signal as os_signal
 
+from app.workers.pid import read_pid
 from app.database.db import init_db
 from app.workers.worker import Worker
 from app.services.job_service import enqueue_job, list_jobs, get_status, list_dead_jobs, retry_dead_job
@@ -106,3 +109,20 @@ def worker_start(count: int = typer.Option(1, "--count")):
     """Start workers in the foreground."""
     typer.echo(f"Starting {count} worker(s)...")
     Worker().start()
+
+
+@worker_app.command("stop")
+def worker_stop():
+    """Gracefully stop all running workers."""
+    pid = read_pid()
+
+    if pid is None:
+        typer.echo("No running worker found.")
+        raise typer.Exit(1)
+
+    try:
+        os.kill(pid, os_signal.SIGTERM)
+        typer.echo(f"Stop signal sent to worker (PID: {pid}).")
+    except ProcessLookupError:
+        typer.echo("Worker process not found — it may have already stopped.")
+        raise typer.Exit(1)
