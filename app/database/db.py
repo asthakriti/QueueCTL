@@ -14,7 +14,7 @@ def get_connection():
 
 
 def init_db():
-    """Jobs table banao agar exist nahi karti."""
+    """Create jobs table if it doesn't exist."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -26,7 +26,8 @@ def init_db():
             attempts INTEGER NOT NULL DEFAULT 0,
             max_retries INTEGER NOT NULL DEFAULT 3,
             created_at TEXT NOT NULL,
-            updated_at TEXT NOT NULL
+            updated_at TEXT NOT NULL,
+            retry_after TEXT
         )
     """)
 

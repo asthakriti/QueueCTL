@@ -1,7 +1,10 @@
 import subprocess
 import time
+from datetime import datetime, timezone, timedelta
 
 from app.repository.job_repository import claim_job, update_job_state
+
+BACKOFF_BASE = 2
 
 
 class Worker:
@@ -24,6 +27,8 @@ class Worker:
         """Execute a single job."""
         print(f"Running job: {job['id']} — {job['command']}")
 
+        attempts = job["attempts"] + 1
+
         try:
             result = subprocess.run(
                 job["command"],
@@ -32,12 +37,22 @@ class Worker:
             )
 
             if result.returncode == 0:
-                update_job_state(job["id"], "completed", job["attempts"] + 1)
+                update_job_state(job["id"], "completed", attempts)
                 print(f"Job completed: {job['id']}")
             else:
-                update_job_state(job["id"], "failed", job["attempts"] + 1)
-                print(f"Job failed: {job['id']}")
+                self._handle_failure(job, attempts)
 
         except Exception as e:
-            update_job_state(job["id"], "failed", job["attempts"] + 1)
             print(f"Job error: {job['id']} — {e}")
+            self._handle_failure(job, attempts)
+
+    def _handle_failure(self, job: dict, attempts: int):
+        """Handle a failed job — retry or move to DLQ."""
+        if attempts >= job["max_retries"]:
+            update_job_state(job["id"], "dead", attempts)
+            print(f"Job dead (max retries reached): {job['id']}")
+        else:
+            delay = BACKOFF_BASE ** attempts
+            retry_after = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
+            update_job_state(job["id"], "failed", attempts, retry_after)
+            print(f"Job failed: {job['id']} — retrying in {delay}s")
