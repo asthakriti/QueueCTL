@@ -3,6 +3,7 @@ import json
 
 from app.database.db import init_db
 from app.services.job_service import enqueue_job, list_jobs, get_status
+from app.workers.worker import Worker
 
 init_db()
 
@@ -86,3 +87,10 @@ def dlq_retry(job_id: str):
 def config_set(key: str, value: str):
     """Set a config value."""
     typer.echo(f"Config set: {key} = {value}")
+
+
+@worker_app.command("start")
+def worker_start(count: int = typer.Option(1, "--count")):
+    """Start workers in the foreground."""
+    typer.echo(f"Starting {count} worker(s)...")
+    Worker().start()
