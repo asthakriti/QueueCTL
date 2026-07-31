@@ -1,5 +1,9 @@
 import typer
-from app.database.db import init_db
+import json
+import uuid
+from datetime import datetime, timezone
+
+from app.database.db import init_db, get_connection
 
 init_db()
 
@@ -17,7 +21,45 @@ app.add_typer(config_app, name="config")
 @app.command()
 def enqueue(job_json: str):
     """Add a new job to the queue."""
-    typer.echo(f"Enqueuing: {job_json}")
+
+    # Step 1: Parse the JSON string
+    try:
+        data = json.loads(job_json)
+    except json.JSONDecodeError:
+        typer.echo("Error: Invalid JSON. Please pass valid JSON string.")
+        raise typer.Exit(1)
+
+    # Step 2: Build the job
+    now = datetime.now(timezone.utc).isoformat()
+    job = {
+        "id": data.get("id", str(uuid.uuid4())),
+        "command": data.get("command", ""),
+        "state": "pending",
+        "attempts": 0,
+        "max_retries": data.get("max_retries", 3),
+        "created_at": now,
+        "updated_at": now,
+    }
+
+    # Step 3: Validate
+    if not job["command"]:
+        typer.echo("Error: 'command' is required.")
+        raise typer.Exit(1)
+
+    # Step 4: Save to database
+    try:
+        conn = get_connection()
+        conn.execute("""
+            INSERT INTO jobs (id, command, state, attempts, max_retries, created_at, updated_at)
+            VALUES (:id, :command, :state, :attempts, :max_retries, :created_at, :updated_at)
+        """, job)
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        typer.echo(f"Error: Job with id '{job['id']}' already exists.")
+        raise typer.Exit(1)
+
+    typer.echo(f"Job added: {job['id']}")
 
 
 @app.command()
