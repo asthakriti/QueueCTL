@@ -2,8 +2,8 @@ import typer
 import json
 
 from app.database.db import init_db
-from app.services.job_service import enqueue_job, list_jobs, get_status
 from app.workers.worker import Worker
+from app.services.job_service import enqueue_job, list_jobs, get_status, list_dead_jobs, retry_dead_job
 
 init_db()
 
@@ -74,14 +74,26 @@ def worker_stop():
 @dlq_app.command("list")
 def dlq_list():
     """List all dead jobs."""
-    typer.echo("DLQ list: coming soon")
+    jobs = list_dead_jobs()
+
+    if not jobs:
+        typer.echo("No dead jobs in DLQ.")
+        return
+
+    for job in jobs:
+        typer.echo(f"[dead] {job['id']} — {job['command']} (attempts: {job['attempts']})")
 
 
 @dlq_app.command("retry")
 def dlq_retry(job_id: str):
-    """Retry a dead job."""
-    typer.echo(f"Retrying job: {job_id}")
+    """Move a dead job back to pending queue."""
+    success = retry_dead_job(job_id)
 
+    if success:
+        typer.echo(f"Job {job_id} re-queued successfully.")
+    else:
+        typer.echo(f"Error: Job '{job_id}' not found in DLQ.")
+        raise typer.Exit(1)
 
 @config_app.command("set")
 def config_set(key: str, value: str):

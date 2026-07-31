@@ -1,8 +1,7 @@
 import uuid
 import json
 from datetime import datetime, timezone
-
-from app.repository.job_repository import insert_job, get_jobs_by_state, get_state_counts
+from app.repository.job_repository import insert_job, get_jobs_by_state, get_state_counts, get_dead_jobs, requeue_job
 
 
 def enqueue_job(job_json: str) -> dict:
@@ -43,3 +42,13 @@ def list_jobs(state: str) -> list:
 def get_status() -> list:
     """Return job counts grouped by state."""
     return get_state_counts()
+
+
+def list_dead_jobs() -> list:
+    """Return all dead jobs."""
+    return get_dead_jobs()
+
+
+def retry_dead_job(job_id: str) -> bool:
+    """Move a dead job back to pending. Returns True if successful."""
+    return requeue_job(job_id)

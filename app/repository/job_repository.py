@@ -76,3 +76,29 @@ def update_job_state(job_id: str, state: str, attempts: int, retry_after: str = 
     """, (state, attempts, datetime.now(timezone.utc).isoformat(), retry_after, job_id))
     conn.commit()
     conn.close()
+
+def get_dead_jobs() -> list:
+    """Fetch all dead jobs from DLQ."""
+    conn = get_connection()
+    rows = conn.execute(
+        "SELECT * FROM jobs WHERE state = 'dead' ORDER BY updated_at DESC"
+    ).fetchall()
+    conn.close()
+    return [dict(row) for row in rows]
+
+
+def requeue_job(job_id: str):
+    """Reset a dead job back to pending with fresh attempts."""
+    conn = get_connection()
+    conn.execute("""
+        UPDATE jobs
+        SET state = 'pending',
+            attempts = 0,
+            retry_after = NULL,
+            updated_at = ?
+        WHERE id = ? AND state = 'dead'
+    """, (datetime.now(timezone.utc).isoformat(), job_id))
+    affected = conn.execute("SELECT changes()").fetchone()[0]
+    conn.commit()
+    conn.close()
+    return affected > 0
