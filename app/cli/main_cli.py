@@ -1,4 +1,7 @@
 import typer
+from app.database.db import init_db
+
+init_db()
 
 app = typer.Typer(help="QueueCTL — A CLI background job queue system.")
 
