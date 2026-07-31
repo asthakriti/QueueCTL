@@ -1,13 +1,11 @@
 import sqlite3
 import os
 
-# Database file ka path
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "queuectl.db")
-DB_PATH = os.path.abspath(DB_PATH)
+DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "queuectl.db"))
 
 
 def get_connection():
-    """Database se connection lo."""
+    """Get a database connection."""
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
     return conn
@@ -27,7 +25,8 @@ def init_db():
             max_retries INTEGER NOT NULL DEFAULT 3,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            retry_after TEXT
+            retry_after TEXT,
+            worker_heartbeat TEXT
         )
     """)
 

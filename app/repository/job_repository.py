@@ -1,6 +1,6 @@
 from app.database.db import get_connection
-from datetime import datetime, timezone
 from typing import Optional
+from datetime import datetime, timezone, timedelta
 
 def insert_job(job: dict):
     """Save a new job to the database."""
@@ -102,3 +102,33 @@ def requeue_job(job_id: str):
     conn.commit()
     conn.close()
     return affected > 0
+
+def update_heartbeat(job_id: str):
+    """Update the heartbeat timestamp for a processing job."""
+    conn = get_connection()
+    conn.execute("""
+        UPDATE jobs
+        SET worker_heartbeat = ?
+        WHERE id = ?
+    """, (datetime.now(timezone.utc).isoformat(), job_id))
+    conn.commit()
+    conn.close()
+
+
+def recover_stuck_jobs(timeout_seconds: int = 30) -> int:
+    """Reset processing jobs whose heartbeat has expired."""
+    conn = get_connection()
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=timeout_seconds)).isoformat()
+
+    result = conn.execute("""
+        UPDATE jobs
+        SET state = 'pending',
+            updated_at = ?
+        WHERE state = 'processing'
+        AND (worker_heartbeat IS NULL OR worker_heartbeat < ?)
+    """, (datetime.now(timezone.utc).isoformat(), cutoff))
+
+    recovered = result.rowcount
+    conn.commit()
+    conn.close()
+    return recovered
