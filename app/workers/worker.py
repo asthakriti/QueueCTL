@@ -4,11 +4,11 @@ import signal
 import os
 import threading
 from datetime import datetime, timezone, timedelta
+from app.config import get_config
 
 from app.repository.job_repository import claim_job, update_job_state, update_heartbeat, recover_stuck_jobs
 from app.workers.pid import write_pid, delete_pid
 
-BACKOFF_BASE = 2
 HEARTBEAT_INTERVAL = 10   # every 10 seconds
 RECOVERY_TIMEOUT = 30     # jobs older than 30s are stuck
 
@@ -19,6 +19,7 @@ class Worker:
     def __init__(self):
         self.running = True
         self.current_job_id = None
+        self.backoff_base = int(get_config("backoff-base", default=2))
         signal.signal(signal.SIGINT, self._handle_shutdown)
         signal.signal(signal.SIGTERM, self._handle_shutdown)
 
@@ -104,7 +105,7 @@ class Worker:
             update_job_state(job["id"], "dead", attempts)
             print(f"Job dead (max retries reached): {job['id']}")
         else:
-            delay = BACKOFF_BASE ** attempts
+            delay = self.backoff_base ** attempts
             retry_after = (datetime.now(timezone.utc) + timedelta(seconds=delay)).isoformat()
             update_job_state(job["id"], "failed", attempts, retry_after)
             print(f"Job failed: {job['id']} — retrying in {delay}s")

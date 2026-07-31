@@ -12,7 +12,7 @@ def get_connection():
 
 
 def init_db():
-    """Create jobs table if it doesn't exist."""
+    """Create tables if they don't exist."""
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -29,6 +29,17 @@ def init_db():
             worker_heartbeat TEXT
         )
     """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS config (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        )
+    """)
+
+    # Insert default values if not present
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('max-retries', '3')")
+    cursor.execute("INSERT OR IGNORE INTO config (key, value) VALUES ('backoff-base', '2')")
 
     conn.commit()
     conn.close()

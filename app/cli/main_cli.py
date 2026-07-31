@@ -6,6 +6,7 @@ import signal as os_signal
 from app.workers.pid import read_pid
 from app.database.db import init_db
 from app.workers.worker import Worker
+from app.config import set_config, get_config
 from app.services.job_service import enqueue_job, list_jobs, get_status, list_dead_jobs, retry_dead_job
 
 init_db()
@@ -101,7 +102,14 @@ def dlq_retry(job_id: str):
 @config_app.command("set")
 def config_set(key: str, value: str):
     """Set a config value."""
-    typer.echo(f"Config set: {key} = {value}")
+    allowed_keys = ["max-retries", "backoff-base"]
+
+    if key not in allowed_keys:
+        typer.echo(f"Error: Unknown config key '{key}'. Allowed: {allowed_keys}")
+        raise typer.Exit(1)
+
+    set_config(key, value)
+    typer.echo(f"Config updated: {key} = {value}")
 
 
 @worker_app.command("start")
@@ -126,3 +134,4 @@ def worker_stop():
     except ProcessLookupError:
         typer.echo("Worker process not found — it may have already stopped.")
         raise typer.Exit(1)
+
