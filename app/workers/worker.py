@@ -1,5 +1,6 @@
 import subprocess
 import time
+import signal
 from datetime import datetime, timezone, timedelta
 
 from app.repository.job_repository import claim_job, update_job_state
@@ -10,11 +11,21 @@ BACKOFF_BASE = 2
 class Worker:
     """A worker that picks up and executes jobs from the queue."""
 
+    def __init__(self):
+        self.running = True
+        signal.signal(signal.SIGINT, self._handle_shutdown)
+        signal.signal(signal.SIGTERM, self._handle_shutdown)
+
+    def _handle_shutdown(self, signum, frame):
+        """Called when SIGINT or SIGTERM is received."""
+        print("\nShutdown signal received. Finishing current job...")
+        self.running = False
+
     def start(self):
         """Start the worker loop."""
         print("Worker started. Waiting for jobs...")
 
-        while True:
+        while self.running:
             job = claim_job(worker_id="worker-1")
 
             if not job:
@@ -23,6 +34,8 @@ class Worker:
 
             self._execute(job)
 
+        print("Worker stopped gracefully.")
+
     def _execute(self, job: dict):
         """Execute a single job."""
         print(f"Running job: {job['id']} — {job['command']}")
@@ -30,13 +43,23 @@ class Worker:
         attempts = job["attempts"] + 1
 
         try:
-            result = subprocess.run(
+            proc = subprocess.Popen(
                 job["command"],
                 shell=True,
-                timeout=60
+                start_new_session=True
             )
+            proc.wait(timeout=60)
 
-            if result.returncode == 0:
+            if proc.returncode == 0:
+                update_job_state(job["id"], "completed", attempts)
+                print(f"Job completed: {job['id']}")
+            else:
+                self._handle_failure(job, attempts)
+
+        except KeyboardInterrupt:
+            print("Waiting for job to finish...")
+            proc.wait()
+            if proc.returncode == 0:
                 update_job_state(job["id"], "completed", attempts)
                 print(f"Job completed: {job['id']}")
             else:
