@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "queuectl"
+version = "0.1.0"
+requires-python = ">=3.9"
+dependencies = ["typer>=0.9"]
+
+[project.scripts]
+queuectl = "app.cli.main_cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
