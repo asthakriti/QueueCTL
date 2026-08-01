@@ -98,6 +98,19 @@ queuectl/
 ├── DECISIONS.md
 └── README.md
 ```
+## Multi-Worker Support
+
+QueueCTL supports running multiple workers in parallel using the `--count` flag:
+
+queuectl worker start --count 3
+
+Each worker runs in a separate thread. Signal handlers (SIGINT, SIGTERM) are 
+registered only on the main thread, since Python restricts signal handling to 
+the main thread. Non-main worker threads inherit the shutdown behavior through 
+the shared `running` flag.
+
+**Note:** SQLite's single-writer lock means workers process jobs sequentially 
+in practice. For true parallelism, replace SQLite with PostgreSQL.
 
 ### How It Works
 
