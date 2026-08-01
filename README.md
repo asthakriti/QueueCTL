@@ -11,7 +11,7 @@ retries with exponential backoff, and a Dead Letter Queue (DLQ).
 
 ```bash
 # Clone the repository
-git clone https://github.com/asthakriti/QueueCT
+git clone https://github.com/asthakriti/QueueCT.git
 cd queuectl
 
 # Create virtual environment
