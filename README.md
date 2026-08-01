@@ -81,23 +81,25 @@ queuectl config set backoff-base 2
 
 ## Architecture
 
+```
 queuectl/
 ├── app/
-│ ├── cli/
-│ │ └── main_cli.py # All CLI commands
-│ ├── database/
-│ │ └── db.py # SQLite connection and schema
-│ ├── repository/
-│ │ └── job_repository.py # All database queries
-│ ├── services/
-│ │ └── job_service.py # Business logic
-│ ├── workers/
-│ │ ├── worker.py # Worker loop and execution
-│ │ └── pid.py # PID file management
-│ └── config.py # Config read/write
+│   ├── cli/
+│   │   └── main_cli.py        # All CLI commands
+│   ├── database/
+│   │   └── db.py              # SQLite connection and schema
+│   ├── repository/
+│   │   └── job_repository.py  # All database queries
+│   ├── services/
+│   │   └── job_service.py     # Business logic
+│   ├── workers/
+│   │   ├── worker.py          # Worker loop and execution
+│   │   └── pid.py             # PID file management
+│   └── config.py              # Config read/write
 ├── pyproject.toml
 ├── DECISIONS.md
 └── README.md
+```
 
 ### How It Works
 
