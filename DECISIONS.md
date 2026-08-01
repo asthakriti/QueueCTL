@@ -90,6 +90,11 @@ When a worker starts, it writes its PID to `worker.pid`.
   Works across any number of terminals. Limitation: only tracks one worker
   process per PID file. For multiple workers, would need per-worker PID files.
 
+**Multi-worker threading note:** When `--count N` is used, signal handlers are 
+  registered only on the main thread. Python restricts `signal.signal()` to the 
+  main thread — worker threads inherit graceful shutdown through the shared 
+  `self.running = False` flag checked in their loop.
+
 ---
 
 ## 5. Priority Queues — What Would Change?
@@ -108,3 +113,4 @@ When a worker starts, it writes its PID to `worker.pid`.
 
 The rest of the system is designed to be unaware of ordering — only the
 claiming mechanism cares about which job to pick next.
+
