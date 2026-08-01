@@ -20,8 +20,11 @@ class Worker:
         self.running = True
         self.current_job_id = None
         self.backoff_base = int(get_config("backoff-base", default=2))
-        signal.signal(signal.SIGINT, self._handle_shutdown)
-        signal.signal(signal.SIGTERM, self._handle_shutdown)
+
+        # Signal handler sirf main thread mein register karo
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self._handle_shutdown)
+            signal.signal(signal.SIGTERM, self._handle_shutdown)
 
     def _handle_shutdown(self, signum, frame):
         """Called when SIGINT or SIGTERM is received."""

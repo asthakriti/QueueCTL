@@ -1,6 +1,7 @@
 import typer
 import json
 import os
+import threading
 import signal as os_signal
 
 from app.workers.pid import read_pid
@@ -67,6 +68,17 @@ def list_cmd(
 def worker_start(count: int = typer.Option(1, "--count")):
     """Start workers in the foreground."""
     typer.echo(f"Starting {count} worker(s)...")
+
+    threads = []
+    for i in range(count):
+        worker = Worker()
+        t = threading.Thread(target=worker.start, daemon=True)
+        threads.append(t)
+        t.start()
+
+    # Wait for all threads to finish
+    for t in threads:
+        t.join()
 
 
 @worker_app.command("stop")
