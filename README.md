@@ -9,18 +9,15 @@ retries with exponential backoff, and a Dead Letter Queue (DLQ).
 
 **Requirements:** Python 3.9+, Git Bash (on Windows) or any bash terminal
 
-```bash
-# Clone the repository
+## Setup
+
+**Requirements:** Python 3.9+, Git Bash (on Windows) or any bash terminal
+
 ```bash
 git clone https://github.com/asthakriti/QueueCTL.git
 cd queuectl
-
-# Create virtual environment
 python3 -m venv .venv
-source .venv/Scripts/activate   # Windows Git Bash
-# source .venv/bin/activate     # Mac/Linux
-
-# Install dependencies
+source .venv/Scripts/activate
 pip install -e .
 ```
 
