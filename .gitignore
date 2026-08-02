@@ -8,4 +8,4 @@ __pycache__/
 worker.pid
 .queuectl-pids/
 *.db-wal
-*.db-shm
+*.db-shmtest_queuectl.sh
