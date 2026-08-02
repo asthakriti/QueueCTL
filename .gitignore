@@ -6,3 +6,6 @@ __pycache__/
 .env
 .idea/
 worker.pid
+.queuectl-pids/
+*.db-wal
+*.db-shm

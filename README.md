@@ -1,13 +1,9 @@
 # QueueCTL
 
 A CLI-based background job queue system with worker processes, automatic
-retries with exponential backoff, and a Dead Letter Queue (DLQ).
+retries with exponential backoff, crash recovery, and a Dead Letter Queue (DLQ).
 
 ---
-
-## Setup
-
-**Requirements:** Python 3.9+, Git Bash (on Windows) or any bash terminal
 
 ## Setup
 
@@ -17,7 +13,7 @@ retries with exponential backoff, and a Dead Letter Queue (DLQ).
 git clone https://github.com/asthakriti/QueueCTL.git
 cd queuectl
 python3 -m venv .venv
-source .venv/Scripts/activate
+source .venv/Scripts/activate   # Linux/macOS: source .venv/bin/activate
 pip install -e .
 ```
 
@@ -26,32 +22,53 @@ pip install -e .
 ## Usage
 
 ### Enqueue a Job
+
 ```bash
 queuectl enqueue '{"id":"job1","command":"echo hello"}'
 queuectl enqueue '{"id":"job2","command":"sleep 5","max_retries":3}'
 ```
 
+`id` is optional — a UUID is generated if omitted. `max_retries` falls back to
+the configured default.
+
 ### Start Workers
+
 ```bash
-# Start 1 worker (foreground)
+# One worker in the foreground
 queuectl worker start
 
-# Start with custom count (runs multiple in background)
+# Three workers, each a separate OS process
 queuectl worker start --count 3
 ```
 
+You can also run `queuectl worker start` in several terminals; workers
+coordinate through the database, not through the process that launched them.
+
 ### Stop Workers
+
 ```bash
-# From a different terminal
+# From any other terminal — stops every running worker
 queuectl worker stop
 ```
 
 ### Check Status
+
 ```bash
 queuectl status
 ```
 
+```
+=== QueueCTL Status ===
+  pending      1
+  processing   0
+  completed    4
+  failed       0
+  dead         1
+  workers      2 active
+```
+
 ### List Jobs by State
+
 ```bash
 queuectl list --state pending
 queuectl list --state completed
@@ -61,18 +78,18 @@ queuectl list --state pending --json
 ```
 
 ### Dead Letter Queue
-```bash
-# View dead jobs
-queuectl dlq list
 
-# Retry a dead job
+```bash
+queuectl dlq list
 queuectl dlq retry job1
 ```
 
 ### Configuration
+
 ```bash
 queuectl config set max-retries 3
 queuectl config set backoff-base 2
+queuectl config set job-timeout 300
 ```
 
 ---
@@ -85,55 +102,90 @@ queuectl/
 │   ├── cli/
 │   │   └── main_cli.py        # All CLI commands
 │   ├── database/
-│   │   └── db.py              # SQLite connection and schema
+│   │   └── db.py              # SQLite connection, PRAGMAs, schema
 │   ├── repository/
-│   │   └── job_repository.py  # All database queries
+│   │   └── job_repository.py  # All SQL — claiming, recovery, DLQ
 │   ├── services/
-│   │   └── job_service.py     # Business logic
+│   │   └── job_service.py     # Validation and business logic
 │   ├── workers/
-│   │   ├── worker.py          # Worker loop and execution
-│   │   └── pid.py             # PID file management
-│   └── config.py              # Config read/write
+│   │   ├── worker.py          # Worker loop and job execution
+│   │   └── pid.py             # Per-process PID files
+│   ├── config.py              # Config read/write
+│   └── utils.py               # Timestamps, process-group kill
 ├── pyproject.toml
 ├── DECISIONS.md
 └── README.md
 ```
-## Multi-Worker Support
 
-QueueCTL supports running multiple workers in parallel using the `--count` flag:
-
-queuectl worker start --count 3
-
-Each worker runs in a separate thread. Signal handlers (SIGINT, SIGTERM) are 
-registered only on the main thread, since Python restricts signal handling to 
-the main thread. Non-main worker threads inherit the shutdown behavior through 
-the shared `running` flag.
-
-**Note:** SQLite's single-writer lock means workers process jobs sequentially 
-in practice. For true parallelism, replace SQLite with PostgreSQL.
+Layering is strictly one-directional: `cli → services → repository → database`.
+The worker talks to the repository directly because it is a second entry point,
+not a caller of the CLI.
 
 ### How It Works
 
-1. **Enqueue** — Jobs are stored in SQLite with `state = pending`
-2. **Worker** — Polls the database, claims a pending job atomically, executes
-   the shell command via `subprocess`
-3. **Retry** — Failed jobs are scheduled for retry using exponential backoff
-   (`delay = base ^ attempts`)
-4. **DLQ** — After `max_retries` failures, job moves to `state = dead`
-5. **Crash Recovery** — Worker updates a heartbeat every 10s. Jobs with
-   expired heartbeats (>30s) are reset to pending automatically
-6. **Graceful Shutdown** — SIGTERM/SIGINT finishes the current job before
-   exiting
+1. **Enqueue** — jobs are stored in SQLite with `state = pending`.
+2. **Claim** — a worker claims one job inside a `BEGIN IMMEDIATE` transaction
+   with a `WHERE id = ? AND state = ?` compare-and-swap guard, so exactly one
+   worker can ever win a given job.
+3. **Execute** — the command runs via `subprocess` in its own process group.
+4. **Retry** — a failed job is scheduled with exponential backoff
+   (`delay = base ^ attempts`).
+5. **DLQ** — after `max_retries` attempts the job moves to `state = dead`.
+6. **Crash recovery** — the worker refreshes a heartbeat every 5s. A job whose
+   heartbeat is older than 15s is treated as abandoned: its orphaned command is
+   killed and the job is reset to `pending`.
+7. **Graceful shutdown** — SIGTERM/SIGINT finishes the current job, then exits.
+
+---
+
+## Concurrency Model
+
+`worker start --count N` spawns **N separate OS processes**, not threads. This
+matters for three reasons:
+
+- `signal.signal()` only binds on the main thread, so N workers sharing one main
+  thread would overwrite each other's handlers and only the last one would ever
+  shut down.
+- Each process gets its own PID file, so `worker stop` can stop all of them.
+- One crashing worker does not take the others down.
+
+Workers coordinate purely through the database, so processes started from
+separate terminals are equivalent to processes started with `--count`.
+
+SQLite is opened in **WAL** mode with a 30s `busy_timeout`, so readers do not
+block the writer and a contended write waits instead of failing with
+`database is locked`. Jobs execute in child processes, so N workers really do
+run N commands at once; only the short claim/update transactions serialise.
+
+**Verified:** 20 jobs across 6 worker processes → 20 executions, 20 distinct
+jobs, zero duplicates.
+
+---
+
+## Delivery Semantics
+
+**Claiming is exactly-once. Execution is at-least-once.**
+
+Two workers can never claim the same job. But if a worker is SIGKILLed after its
+command has run and before it records `completed`, recovery will re-run that
+command. Killing the orphaned process group on recovery shrinks the window to
+the recovery interval, but cannot close it — an external command runner cannot
+know whether a foreign process's side effects landed. **Job handlers should be
+idempotent.** See `DECISIONS.md` §2.
 
 ---
 
 ## Job Lifecycle
 
-pending → processing → completed
-↘
-failed → (retry after backoff) → pending
-↘ (max retries exceeded)
-dead (DLQ)
+```
+pending ──► processing ──► completed
+                │
+                └──► failed ──(backoff)──► pending
+                        │
+                        └──(attempts >= max_retries)──► dead (DLQ)
+```
+
+`dlq retry <id>` moves a `dead` job back to `pending` with `attempts` reset to 0.
 
 ---
 
@@ -151,41 +203,77 @@ dead (DLQ)
 
 ## Configuration
 
-| Key          | Default | Description                    |
-|--------------|---------|--------------------------------|
-| max-retries  | 3       | Maximum retry attempts per job |
-| backoff-base | 2       | Base for exponential backoff   |
+| Key          | Default | Description                              | Applies to |
+|--------------|---------|------------------------------------------|------------|
+| max-retries  | 3       | Default attempts before a job goes to DLQ | Jobs enqueued after the change |
+| backoff-base | 2       | Base for exponential backoff              | Immediately, including in-flight jobs |
+| job-timeout  | 300     | Seconds before a running command is killed | The next job a worker starts |
 
-Config changes affect only newly-enqueued jobs. Already-enqueued jobs
-store their own `max_retries` value at enqueue time.
+A `max_retries` supplied in the enqueue JSON always overrides the configured
+default. An already-enqueued job keeps the `max_retries` stamped on its row, so
+its retry budget cannot change underneath it.
 
 ---
 
 ## Testing the System
 
+Full instructions — clean install, automated suite, and a manual walkthrough of
+all five scenarios with expected output — are in **[TESTING.md](./TESTING.md)**.
+
+```bash
+bash interview_tests.sh
+```
+
 ### Basic Job
+
 ```bash
 queuectl enqueue '{"id":"test1","command":"echo hello"}'
 queuectl worker start
 ```
 
 ### Retry + DLQ
+
 ```bash
 queuectl enqueue '{"id":"fail1","command":"exit 1","max_retries":3}'
 queuectl worker start
-# Watch job retry 3 times then move to DLQ
+# watch it retry with 2s then 4s backoff, then land in the DLQ
 queuectl dlq list
 queuectl dlq retry fail1
 ```
 
+### Multiple Workers, Exactly Once
+
+```bash
+for i in $(seq 1 12); do
+  queuectl enqueue "{\"id\":\"m$i\",\"command\":\"sleep 2; echo m$i>> exec.log\"}"
+done
+queuectl worker start --count 3
+# in another terminal:
+queuectl status                 # "workers  3 active"
+queuectl worker stop
+sort exec.log | uniq -c         # every line should show a count of 1
+```
+
+### Full Scenario Suite
+
+```bash
+bash interview_tests.sh
+```
+
+> **Note on job commands:** a job's `command` is executed by the platform's
+> shell — `/bin/sh` on Linux/macOS, `cmd.exe` on Windows. `sleep 2; echo x`
+> is POSIX-only; the Windows equivalent is
+> `ping -n 3 127.0.0.1 > nul && echo x`. `interview_tests.sh` detects the
+> platform and builds the right form.
+
 ### Crash Recovery
+
 ```bash
 queuectl enqueue '{"id":"crash1","command":"sleep 300"}'
 queuectl worker start
-# Close the terminal window (simulates SIGKILL)
-# Wait 35 seconds, then start worker again
+# kill the worker hard (close the terminal, or `kill -9 <pid>`)
 queuectl worker start
-# Job will be recovered automatically
+# within ~16s: "Recovered 1 stuck job(s)." and nothing is left in `processing`
 ```
 
 ---
@@ -198,5 +286,6 @@ queuectl worker start
 
 ## Design Decisions
 
-See [DECISIONS.md](./DECISIONS.md) for detailed explanation of all
-architectural choices.
+See [DECISIONS.md](./DECISIONS.md) for the reasoning behind atomic claiming,
+crash recovery, DLQ retry semantics, worker signalling, and what would change
+for priority queues.
