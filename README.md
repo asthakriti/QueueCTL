@@ -218,7 +218,7 @@ its retry budget cannot change underneath it.
 
 ## Demo Recording
 
-[Link to demo recording](#) ← add your recording link here
+[Link to demo recording](https://drive.google.com/file/d/1aeYuyLKpainufl28E3C6K15iaKJT2ORV/view?usp=drive_link)
 
 ---
 
